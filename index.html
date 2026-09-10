@@ -27,7 +27,7 @@
     .flex-group{display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
     .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:24px; }
     label { font-size:14px; font-weight:600; color:#495057; }
-    input[type=date],input[type=number],select { padding:8px 12px; font-size:14px; color:var(--text); background:#fff; border:1px solid #ced4da; border-radius:6px; outline:none; }
+    input[type=date],input[type=number],input.date-mask,select { padding:8px 12px; font-size:14px; color:var(--text); background:#fff; border:1px solid #ced4da; border-radius:6px; outline:none; }
     input:focus,select:focus { border-color:var(--primary); box-shadow:0 0 0 3px rgba(37,99,235,.1); }
     button { padding:10px 18px; border:none; border-radius:6px; font-size:14px; font-weight:600; letter-spacing:-.2px; cursor:pointer; transition:.2s; }
     button:hover { transform:translateY(-1px); }
@@ -78,6 +78,37 @@
     .instruction-panel ol{padding-left:24px;line-height:1.8}
     @media(max-width:900px){.grid-2{grid-template-columns:1fr}.summary-grid{grid-template-columns:repeat(2,1fr)}.month-wrapper{height:780px}}
     @media(max-width:520px){body{padding:18px 12px}.calendar-container{grid-template-columns:1fr}.month-wrapper{height:700px;padding:10px}.tab-button{padding:10px 12px;font-size:13px}.summary-grid{grid-template-columns:1fr}.action-row button{min-width:100%}}
+    .day { position: relative; }
+    .api-diff-badge {
+      position: absolute; top: 2px; right: 2px; z-index: 2;
+      font-size: 8px; font-weight: 800; line-height: 1.2; color: #fff;
+      background: #f59e0b; padding: 1px 4px; border-radius: 8px;
+      cursor: help; white-space: nowrap;
+    }
+    .day.has-api-diff { outline: 2px dashed #f59e0b; outline-offset: -2px; }
+
+    /* 하이브리드 날짜 입력(타이핑 자동하이픈 + 클릭 시 브라우저 기본 달력) */
+    .date-field { position: relative; display: inline-flex; align-items: center; flex: 0 0 auto; }
+    input.date-mask { font-variant-numeric: tabular-nums; letter-spacing: .5px; padding-right: 30px; width: 132px; flex: 0 0 auto; }
+    .date-native-hidden {
+      position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+      width: 22px; height: 22px; opacity: 0; pointer-events: none; border: 0; padding: 0;
+    }
+    .date-pick-btn {
+      position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+      width: 22px; height: 22px; padding: 0; border: none; background: transparent;
+      font-size: 14px; line-height: 1; cursor: pointer; color: #6c757d;
+    }
+    .date-pick-btn:hover { color: var(--primary); }
+
+    /* 1단계 방학 기간(여름/겨울/봄) 한 줄 정렬, 좁아지면 줄바꿈 대신 가로 스크롤 */
+    .vacation-row { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 6px; }
+    .vacation-row .flex-group { flex: 0 0 auto; flex-wrap: nowrap; }
+
+    /* 2단계/3단계 방학 중 근무일·임시공휴일 기간 행 한 줄 정렬, 좁아지면 가로 스크롤 */
+    .dynamic-row { flex-wrap: nowrap; overflow-x: auto; }
+    .dynamic-row select.batch-type { flex: 0 0 auto; min-width: 150px; }
+    .dynamic-row .btn-delete { flex: 0 0 auto; }
   </style>
 </head>
 <body>
@@ -100,7 +131,7 @@ var includedTypes = { "근무일":true, "개학준비일":true, "산업안전보
 
 function workRowMarkup(p){
   return '<div class="dynamic-row work-row">' +
-    '<input type="date" class="batch-start"><span>~</span><input type="date" class="batch-end">' +
+    '<input type="text" class="batch-start date-mask" placeholder="연도-월-일" maxlength="10" inputmode="numeric" autocomplete="off"><span>~</span><input type="text" class="batch-end date-mask" placeholder="연도-월-일" maxlength="10" inputmode="numeric" autocomplete="off">' +
     '<select class="batch-type">' +
     '<option value="근무일">방학 중 근무일</option>' +
     '<option value="개학준비일">개학준비일</option>' +
@@ -112,7 +143,7 @@ function workRowMarkup(p){
 }
 function holidayRowMarkup(p){
   return '<div class="dynamic-row holiday-row">' +
-    '<input type="date" class="holi-start"><span>~</span><input type="date" class="holi-end">' +
+    '<input type="text" class="holi-start date-mask" placeholder="연도-월-일" maxlength="10" inputmode="numeric" autocomplete="off"><span>~</span><input type="text" class="holi-end date-mask" placeholder="연도-월-일" maxlength="10" inputmode="numeric" autocomplete="off">' +
     '<button type="button" class="btn-delete" onclick="this.parentElement.remove();syncAll(\'' + p + '\')">삭제</button>' +
     '</div>';
 }
@@ -178,7 +209,7 @@ function calculatorMarkup(prefix, isCook){
   var html = '';
   html += '<div class="card"><div class="card-header"><h2 class="card-title"><span class="blue-dot"></span>' + title + ' · 기본 설정</h2></div>';
   html += '<div class="flex-row">';
-  html += '<div class="flex-group"><label>시작 연/월</label><input type="number" id="' + prefix + '-startYear" placeholder="--" style="width:80px;">년';
+  html += '<div class="flex-group"><label>시작 연/월</label><input type="number" id="' + prefix + '-startYear" placeholder="--" style="width:80px;" oninput="if(this.value.length>=4) document.getElementById(\'' + prefix + '-startMonth\').focus();">년';
   html += '<select id="' + prefix + '-startMonth">' +
     '<option value="1">1월</option><option value="2">2월</option><option value="3" selected>3월</option><option value="4">4월</option>' +
     '<option value="5">5월</option><option value="6">6월</option><option value="7">7월</option><option value="8">8월</option>' +
@@ -188,10 +219,10 @@ function calculatorMarkup(prefix, isCook){
   html += '</div></div>';
 
   html += '<div class="card"><div class="card-header"><h2 class="card-title"><span class="blue-dot"></span>[1단계] 방학 기간 설정</h2></div>';
-  html += '<div class="flex-row">';
-  html += '<div class="flex-group"><label title="방학식 ~ 개학식 일자를 입력하세요">여름방학</label><input type="date" id="' + prefix + '-summerStart" autocomplete="off"><span>~</span><input type="date" id="' + prefix + '-summerEnd" autocomplete="off"></div>';
-  html += '<div class="flex-group"><label title="방학식 ~ 개학식 일자를 입력하세요">겨울방학</label><input type="date" id="' + prefix + '-winterStart" autocomplete="off"><span>~</span><input type="date" id="' + prefix + '-winterEnd" autocomplete="off"></div>';
-  html += '<div class="flex-group"><label title="방학식 ~ 개학식 일자를 입력하세요">봄방학</label><input type="date" id="' + prefix + '-springStart" autocomplete="off"><span>~</span><input type="date" id="' + prefix + '-springEnd" autocomplete="off"></div>';
+  html += '<div class="flex-row vacation-row">';
+  html += '<div class="flex-group"><label title="방학식 ~ 개학식 일자를 입력하세요">여름방학</label><input type="text" id="' + prefix + '-summerStart" class="date-mask" placeholder="연도-월-일" maxlength="10" inputmode="numeric" autocomplete="off"><span>~</span><input type="text" id="' + prefix + '-summerEnd" class="date-mask" placeholder="연도-월-일" maxlength="10" inputmode="numeric" autocomplete="off"></div>';
+  html += '<div class="flex-group"><label title="방학식 ~ 개학식 일자를 입력하세요">겨울방학</label><input type="text" id="' + prefix + '-winterStart" class="date-mask" placeholder="연도-월-일" maxlength="10" inputmode="numeric" autocomplete="off"><span>~</span><input type="text" id="' + prefix + '-winterEnd" class="date-mask" placeholder="연도-월-일" maxlength="10" inputmode="numeric" autocomplete="off"></div>';
+  html += '<div class="flex-group"><label title="방학식 ~ 개학식 일자를 입력하세요">봄방학</label><input type="text" id="' + prefix + '-springStart" class="date-mask" placeholder="연도-월-일" maxlength="10" inputmode="numeric" autocomplete="off"><span>~</span><input type="text" id="' + prefix + '-springEnd" class="date-mask" placeholder="연도-월-일" maxlength="10" inputmode="numeric" autocomplete="off"></div>';
   html += '</div></div>';
 
   html += '<div class="grid-2">';
@@ -233,8 +264,63 @@ function calculatorMarkup(prefix, isCook){
 document.getElementById('panel-cook').innerHTML = calculatorMarkup('cook', true);
 document.getElementById('panel-other').innerHTML = calculatorMarkup('other', false);
 
+// ===== 하이브리드 날짜 입력: 타이핑(4자리마다 자동 하이픈) + 버튼 클릭 시 브라우저 기본 달력 =====
+function attachDateMask(input) {
+  if (!input || input.dataset.maskAttached) return;
+  input.dataset.maskAttached = '1';
+
+  var wrapper = document.createElement('span');
+  wrapper.className = 'date-field';
+  input.parentNode.insertBefore(wrapper, input);
+  wrapper.appendChild(input);
+
+  var hiddenNative = document.createElement('input');
+  hiddenNative.type = 'date';
+  hiddenNative.className = 'date-native-hidden';
+  hiddenNative.tabIndex = -1;
+  wrapper.appendChild(hiddenNative);
+
+  var pickBtn = document.createElement('button');
+  pickBtn.type = 'button';
+  pickBtn.className = 'date-pick-btn';
+  pickBtn.title = '달력에서 선택';
+  pickBtn.textContent = '\uD83D\uDCC5';
+  wrapper.appendChild(pickBtn);
+
+  pickBtn.addEventListener('click', function(){
+    if (/^\d{4}-\d{2}-\d{2}$/.test(input.value)) hiddenNative.value = input.value;
+    if (typeof hiddenNative.showPicker === 'function') {
+      try { hiddenNative.showPicker(); } catch (e) { hiddenNative.focus(); hiddenNative.click(); }
+    } else {
+      hiddenNative.focus();
+      hiddenNative.click();
+    }
+  });
+
+  hiddenNative.addEventListener('change', function(){
+    if (hiddenNative.value) {
+      input.value = hiddenNative.value;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  });
+
+  input.addEventListener('input', function(){
+    var digits = input.value.replace(/[^0-9]/g, '').slice(0, 8);
+    var formatted = digits;
+    if (digits.length > 4) formatted = digits.slice(0, 4) + '-' + digits.slice(4, 6);
+    if (digits.length > 6) formatted = digits.slice(0, 4) + '-' + digits.slice(4, 6) + '-' + digits.slice(6, 8);
+    input.value = formatted;
+  });
+}
+function attachDateMaskAll(root) {
+  (root || document).querySelectorAll('.date-mask').forEach(attachDateMask);
+}
+attachDateMaskAll(document.getElementById('panel-cook'));
+attachDateMaskAll(document.getElementById('panel-other'));
+
 function clearAllDateInputs(prefix){
-  document.querySelectorAll('#panel-' + prefix + ' input[type="date"]').forEach(function(inp){ inp.value = ''; });
+  document.querySelectorAll('#panel-' + prefix + ' input[type="date"], #panel-' + prefix + ' input.date-mask').forEach(function(inp){ inp.value = ''; });
 }
 clearAllDateInputs('cook');
 clearAllDateInputs('other');
@@ -278,8 +364,8 @@ function labelForType(type){
 function isLeapYear(y){ return (y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0)); }
 function endOfFeb(y){ return y + '-02-' + (isLeapYear(y) ? '29' : '28'); }
 
-function addWorkRow(p){ el(p, 'workRowsContainer').insertAdjacentHTML('beforeend', workRowMarkup(p)); }
-function addHolidayRow(p){ el(p, 'holidayRowsContainer').insertAdjacentHTML('beforeend', holidayRowMarkup(p)); }
+function addWorkRow(p){ el(p, 'workRowsContainer').insertAdjacentHTML('beforeend', workRowMarkup(p)); attachDateMaskAll(el(p, 'workRowsContainer').lastElementChild); }
+function addHolidayRow(p){ el(p, 'holidayRowsContainer').insertAdjacentHTML('beforeend', holidayRowMarkup(p)); attachDateMaskAll(el(p, 'holidayRowsContainer').lastElementChild); }
 
 function resetWorkRows(p){
   el(p, 'workRowsContainer').innerHTML = '';
@@ -313,7 +399,131 @@ function updateJobRules(p){
   if (getDays(p).length) syncAll(p);
 }
 var APIKEY = "af847e3bf0d646dba68eca3206ec5b4682252065f8f19c9e704f79aef6431725";
-function fetchHolidays(year, month) {
+
+// ===== 공휴일 자동 계산 (오프라인, 메인 로직) =====
+var DAY_MS = 86400000;
+function dateUTC(iso) {
+  var parts = iso.split('-').map(Number);
+  return new Date(Date.UTC(parts[0], parts[1] - 1, parts[2], 12));
+}
+function isoUTC(date) { return date.toISOString().slice(0, 10); }
+function addDaysUTC(value, amount) {
+  var d = typeof value === 'string' ? dateUTC(value) : new Date(value.getTime());
+  d.setUTCDate(d.getUTCDate() + amount);
+  return isoUTC(d);
+}
+function weekdayUTC(value) { return dateUTC(value).getUTCDay(); }
+
+function findLunarDate(year, month, day) {
+  var formatter = new Intl.DateTimeFormat('en-u-ca-chinese', {
+    year: 'numeric', month: 'numeric', day: 'numeric', timeZone: 'Asia/Seoul'
+  });
+  var start = new Date(Date.UTC(year, 0, 1, 12));
+  var end = new Date(Date.UTC(year, 11, 31, 12));
+  for (var t = start.getTime(); t <= end.getTime(); t += DAY_MS) {
+    var d = new Date(t);
+    var parts = {};
+    formatter.formatToParts(d).forEach(function(p){ parts[p.type] = p.value; });
+    var y = Number(parts.relatedYear || parts.year);
+    if (y === year && Number(parts.month) === month && Number(parts.day) === day) return isoUTC(d);
+  }
+  return null;
+}
+
+function putHoliday(map, date, name) {
+  if (!date) return;
+  if (!map[date]) map[date] = { date: date, names: [] };
+  if (map[date].names.indexOf(name) === -1) map[date].names.push(name);
+}
+
+function nextNonHoliday(map, start) {
+  var cursor = addDaysUTC(start, 1);
+  while (map[cursor] || weekdayUTC(cursor) === 0) cursor = addDaysUTC(cursor, 1);
+  return cursor;
+}
+
+var offlineHolidayCache = {};
+
+function buildOfflineHolidayYear(year) {
+  if (offlineHolidayCache[year]) return offlineHolidayCache[year];
+  var map = {};
+
+  putHoliday(map, year + '-01-01', '신정');
+  putHoliday(map, year + '-03-01', '삼일절');
+  putHoliday(map, year + '-05-01', '노동절');
+  putHoliday(map, year + '-05-05', '어린이날');
+  putHoliday(map, year + '-06-06', '현충일');
+  if (year >= 2026) putHoliday(map, year + '-07-17', '제헌절');
+  putHoliday(map, year + '-08-15', '광복절');
+  putHoliday(map, year + '-10-03', '개천절');
+  putHoliday(map, year + '-10-09', '한글날');
+  putHoliday(map, year + '-12-25', '성탄절');
+
+  var seollal = findLunarDate(year, 1, 1);
+  var seollalDates = [];
+  if (seollal) {
+    seollalDates = [addDaysUTC(seollal, -1), seollal, addDaysUTC(seollal, 1)];
+    ['설날 전날', '설날', '설날 다음 날'].forEach(function(name, i){ putHoliday(map, seollalDates[i], name); });
+  }
+
+  var buddha = findLunarDate(year, 4, 8);
+  if (buddha) putHoliday(map, buddha, '부처님오신날');
+
+  var chuseok = findLunarDate(year, 8, 15);
+  var chuseokDates = [];
+  if (chuseok) {
+    chuseokDates = [addDaysUTC(chuseok, -1), chuseok, addDaysUTC(chuseok, 1)];
+    ['추석 전날', '추석', '추석 다음 날'].forEach(function(name, i){ putHoliday(map, chuseokDates[i], name); });
+  }
+
+  var substituteSingles = [
+    [year + '-03-01', '삼일절'],
+    [year + '-05-05', '어린이날'],
+    [buddha, '부처님오신날'],
+    [year + '-08-15', '광복절'],
+    [year + '-10-03', '개천절'],
+    [year + '-10-09', '한글날'],
+    [year + '-12-25', '성탄절']
+  ];
+  if (year >= 2026) substituteSingles.push([year + '-07-17', '제헌절']);
+  substituteSingles.forEach(function(pair){
+    var date = pair[0], name = pair[1];
+    if (!date) return;
+    var day = weekdayUTC(date);
+    var overlapsOther = map[date] && map[date].names.length > 1;
+    if (day === 0 || day === 6 || overlapsOther) {
+      var substitute = nextNonHoliday(map, date);
+      putHoliday(map, substitute, name + ' 대체공휴일');
+    }
+  });
+
+  if (seollalDates.length) {
+    var needsSub1 = seollalDates.some(function(d){ return weekdayUTC(d) === 0 || (map[d] && map[d].names.length > 1); });
+    if (needsSub1) putHoliday(map, nextNonHoliday(map, seollalDates[seollalDates.length - 1]), '설날 대체공휴일');
+  }
+  if (chuseokDates.length) {
+    var needsSub2 = chuseokDates.some(function(d){ return weekdayUTC(d) === 0 || (map[d] && map[d].names.length > 1); });
+    if (needsSub2) putHoliday(map, nextNonHoliday(map, chuseokDates[chuseokDates.length - 1]), '추석 대체공휴일');
+  }
+
+  // 중앙선거관리위원회 공고 임기만료 선거일 등, 매년 확인해서 갱신 필요
+  if (year === 2026) putHoliday(map, '2026-06-03', '제9회 전국동시지방선거');
+
+  offlineHolidayCache[year] = map;
+  return map;
+}
+
+function getOfflineHolidaysForMonth(year, month) {
+  var map = buildOfflineHolidayYear(year);
+  var prefixKey = year + '-' + pad(month) + '-';
+  return Object.keys(map).filter(function(d){ return d.indexOf(prefixKey) === 0; }).map(function(d){
+    var h = map[d];
+    return { date: h.date.replace(/-/g, ''), name: h.names.join(', ') };
+  });
+}
+
+// ===== data.go.kr 특일정보 API (보조 검토 전용, 화면 결과에는 영향 없음) =====
+function fetchHolidaysAPI(year, month) {
   var url = "https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService/getRestDeInfo"
     + "?ServiceKey=" + APIKEY
     + "&solYear=" + year
@@ -336,8 +546,45 @@ function fetchHolidays(year, month) {
     .catch(function() { return []; });
 }
 
+function verifyHolidaysWithAPI(year, month, offlineList, p) {
+  fetchHolidaysAPI(year, month).then(function(apiList) {
+    if (!apiList.length) return;
+    var offlineDates = {};
+    offlineList.forEach(function(h){ offlineDates[h.date] = true; });
+    var apiDates = {};
+    apiList.forEach(function(h){ apiDates[h.date] = true; });
+    var missingInOffline = apiList.filter(function(h){ return !offlineDates[h.date]; });
+    var extraInOffline = offlineList.filter(function(h){ return !apiDates[h.date]; });
+    var diffs = missingInOffline.concat(extraInOffline);
+    if (!diffs.length) return;
+
+    console.warn('[공휴일 검토] ' + year + '년 ' + month + '월(' + (p || '') + '): 자체계산과 공공데이터포털 API 결과가 다릅니다.',
+      { API에만있음: missingInOffline, 자체계산에만있음: extraInOffline });
+
+    diffs.forEach(function(h) {
+      var iso = h.date.slice(0, 4) + '-' + h.date.slice(4, 6) + '-' + h.date.slice(6, 8);
+      var scope = p ? '#' + p + '-calendar-container ' : '';
+      var dayEl = document.querySelector(scope + '.day[data-date="' + iso + '"]');
+      if (!dayEl) return;
+      if (dayEl.querySelector('.api-diff-badge')) return;
+      var badge = document.createElement('span');
+      badge.className = 'api-diff-badge';
+      badge.textContent = 'API차이';
+      badge.title = '공공데이터포털 API 결과와 다름: ' + h.name;
+      dayEl.appendChild(badge);
+      dayEl.classList.add('has-api-diff');
+    });
+  }).catch(function(){});
+}
+
+function fetchHolidays(year, month, p) {
+  var offline = getOfflineHolidaysForMonth(year, month);
+  verifyHolidaysWithAPI(year, month, offline, p);
+  return Promise.resolve(offline);
+}
+
 function renderMonth(p, year, month, container, weekState){
-  return fetchHolidays(year, month).then(function(holidays){
+  return fetchHolidays(year, month, p).then(function(holidays){
     var wrapper = document.createElement('div');
     wrapper.className = 'month-wrapper';
     wrapper.innerHTML = '<div class="month-header"><div class="month-header-title">' + year + '년 ' + month + '월</div>' +
