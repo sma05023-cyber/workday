@@ -1201,37 +1201,47 @@ function monthsInRange(v){
   return months;
 }
 
-function monthBlockHtml(y, mo, v, workMap){
+function monthBlockHtml(y, mo, v, dayInfo){
   var first = new Date(y, mo, 1).getDay();
   var lastDay = new Date(y, mo + 1, 0).getDate();
   var cells = [];
   for (var i = 0; i < first; i++) cells.push('<td></td>');
   for (var day = 1; day <= lastDay; day++) {
     var s = y + '-' + pad(mo + 1) + '-' + pad(day);
-    var inPeriod = s > v.s && s < v.e;
-    var type = inPeriod ? workMap[s] : null;
+    var info = dayInfo[s] || null;
     var dow = new Date(y, mo, day).getDay();
-    var cls = dow === 0 ? 'sun' : dow === 6 ? 'sat' : '';
+    var cellCls = dow === 0 ? 'sun' : dow === 6 ? 'sat' : '';
     var tag = '';
-    if (type) {
-      var isPrep = type === '개학준비일';
-      tag = '<div class="day-tag' + (isPrep ? ' prep' : '') + '">' + labelForType(type) + '</div>';
+    if (info) {
+      if (info.isHoliday) cellCls += ' cell-holiday';
+      else if (info.isCeremony) cellCls += ' cell-ceremony';
+      else if (info.isWork) cellCls += ' cell-work';
+      else if (info.isPaidWeekend) cellCls += ' cell-paidweekend';
+      if (info.label) {
+        var tagCls = info.isHoliday ? 'tag-holiday' : info.isCeremony ? 'tag-ceremony' : info.isWork ? 'tag-work' : info.isPaidWeekend ? 'tag-paidweekend' : '';
+        tag = '<div class="day-tag ' + tagCls + '">' + info.label + '</div>';
+      }
     }
-    cells.push('<td class="' + cls + '"><div class="day-num">' + day + '</div>' + tag + '</td>');
+    var numCls = 'day-num';
+    if (info && info.isHoliday) numCls += ' num-holiday';
+    else if (dow === 0) numCls += ' num-sun';
+    else if (dow === 6) numCls += ' num-sat';
+    else numCls += ' num-weekday';
+    cells.push('<td class="' + cellCls.trim() + '"><div class="' + numCls + '">' + day + '</div>' + tag + '</td>');
   }
   while (cells.length % 7 !== 0) cells.push('<td></td>');
   var rows = '';
   for (var i2 = 0; i2 < cells.length; i2 += 7) rows += '<tr>' + cells.slice(i2, i2 + 7).join('') + '</tr>';
   return '<div class="month-block"><h3>' + y + '년 ' + (mo + 1) + '월</h3><table class="month-table">' +
     '<colgroup><col><col><col><col><col><col><col></colgroup>' +
-    '<thead><tr><th>일</th><th>월</th><th>화</th><th>수</th><th>목</th><th>금</th><th>토</th></tr></thead>' +
+    '<thead><tr><th class="th-sun">일</th><th>월</th><th>화</th><th>수</th><th>목</th><th>금</th><th class="th-sat">토</th></tr></thead>' +
     '<tbody>' + rows + '</tbody></table></div>';
 }
 
-function periodBlockHtml(v, label, workMap, displayEndOverride){
+function periodBlockHtml(v, label, dayInfo, displayEndOverride){
   var displayV = { s: v.s, e: displayEndOverride || v.e };
   var out = '<div class="period-label">' + label + ' (' + v.s + ' ~ ' + v.e + ')</div>';
-  monthsInRange(displayV).forEach(function(m){ out += monthBlockHtml(m.getFullYear(), m.getMonth(), v, workMap); });
+  monthsInRange(displayV).forEach(function(m){ out += monthBlockHtml(m.getFullYear(), m.getMonth(), v, dayInfo); });
   return out;
 }
 
@@ -1267,17 +1277,34 @@ function printConsent(p, mode){
     chosen[lastIdx] = { v: lastV, label: chosen[lastIdx].label, displayEnd: floorDate };
   }
 
-  var workMap = {};
+  var dayInfo = {};
   getDays(p).forEach(function(d){
+    var date = d.dataset.date;
+    var dow = new Date(date + 'T00:00:00').getDay();
     var vtype = d.querySelector('.vacation-type-select').value;
-    if (d.dataset.isSchoolVacation === 'true' && includedTypes[vtype]) {
-      workMap[d.dataset.date] = vtype;
+    var payStatus = d.querySelector('.daily-pay-status').value;
+    var isHoliday = d.dataset.isHoliday === 'true';
+    var isSchoolVacation = d.dataset.isSchoolVacation === 'true';
+    var isCeremony = d.classList.contains('ceremony');
+    var holidayNameEl = d.querySelector('.holiday-name');
+    var info = { dow: dow, isHoliday: isHoliday, isCeremony: isCeremony, isWork: false, isPaidWeekend: false, label: '' };
+    if (isHoliday) {
+      info.label = holidayNameEl ? holidayNameEl.textContent : '공휴일';
+    } else if (isCeremony) {
+      info.label = '방학식·개학식';
+    } else if (isSchoolVacation && includedTypes[vtype]) {
+      info.isWork = true;
+      info.label = labelForType(vtype);
+    } else if ((dow === 0 || dow === 6) && payStatus === '유급') {
+      info.isPaidWeekend = true;
+      info.label = dow === 0 ? '유급 일요일' : '유급 토요일';
     }
+    dayInfo[date] = info;
   });
 
   var schoolYear = el(p, 'startYear').value ? (el(p, 'startYear').value + '학년도') : '~학년도';
   var body = '';
-  chosen.forEach(function(item){ body += periodBlockHtml(item.v, item.label, workMap, item.displayEnd); });
+  chosen.forEach(function(item){ body += periodBlockHtml(item.v, item.label, dayInfo, item.displayEnd); });
 
   var docHtml = '<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>방학중 근무일 동의서</title><style>' +
     '@page{size:A4 portrait;margin:10mm}' +
@@ -1291,8 +1318,21 @@ function printConsent(p, mode){
     '.month-table th,.month-table td{width:14.2857%;border:1px solid #999;text-align:center;vertical-align:top;height:14mm;padding:1mm;font-size:9px;overflow:hidden}' +
     '.month-table th{height:auto;background:#f1f3f5;font-size:9.5px}' +
     '.day-num{font-weight:700;font-size:9px}' +
-    '.day-tag{margin-top:0.5mm;padding:0.4mm 0;border-radius:1mm;background:#dbeafe;color:#123a78;font-size:7.5px;font-weight:700;white-space:nowrap;overflow:hidden}' +
-    '.day-tag.prep{background:#fde68a;color:#78350f}' +
+    '.day-num.num-weekday{color:#111}' +
+    '.day-num.num-sat{color:#1d4ed8}' +
+    '.day-num.num-sun{color:#c0392b}' +
+    '.day-num.num-holiday{color:#c0392b;font-weight:800}' +
+    '.month-table th.th-sun{color:#c0392b}' +
+    '.month-table th.th-sat{color:#1d4ed8}' +
+    'td.cell-work{background:#e3f6e8}' +
+    'td.cell-paidweekend{background:#f1e5fb}' +
+    'td.cell-holiday{background:#fde3e3}' +
+    'td.cell-ceremony{background:#fff6cc}' +
+    '.day-tag{margin-top:0.5mm;padding:0.4mm 0;border-radius:1mm;background:transparent;font-size:7.5px;font-weight:800;white-space:nowrap;overflow:hidden}' +
+    '.day-tag.tag-work{color:#1e7e34}' +
+    '.day-tag.tag-paidweekend{color:#6f2da8}' +
+    '.day-tag.tag-holiday{color:#c0392b}' +
+    '.day-tag.tag-ceremony{color:#8a6d00}' +
     '.footer{margin-top:5mm;padding-top:3mm;border-top:1px dashed #999;font-size:11px;text-align:center}' +
     '.sign{margin-top:6mm;text-align:right;font-size:13px}' +
     '</style></head><body>' +
